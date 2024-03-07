@@ -14,6 +14,11 @@ use crossterm::{
 use rand::Rng;
 use tui::{widgets::Block, Terminal};
 
+struct EnemyBlock {
+    c: u16,
+    r: u16,
+}
+
 struct Board {
     // board size
     r: u16,
@@ -25,6 +30,8 @@ struct Board {
 
     // all killers
     killers: Killers,
+
+    blocks: Vec<EnemyBlock>, // should be 10 enemy blocks
 }
 
 struct Killers {
@@ -70,11 +77,20 @@ fn move_killers(board: &Board) -> Killers {
 }
 
 fn game_over(mut board: &Board) -> bool {
+    // check physics first
+    let mut physics_condition = false;
+    for i in 0..board.blocks.len() {
+        if board.cursor_c == board.blocks[i].c && board.cursor_r == board.blocks[i].r {
+            physics_condition = true;
+        }
+    }
+
     if (board.killers.k1_c == board.cursor_c as i16 && board.killers.k1_r == board.cursor_r as i16)
         || (board.killers.k2_c == board.cursor_c as i16
             && board.killers.k2_r == board.cursor_r as i16)
         || (board.killers.k3_c == board.cursor_c as i16
             && board.killers.k3_r == board.cursor_r as i16)
+        || physics_condition
     {
         true
     } else {
@@ -125,18 +141,45 @@ fn gen_rand_killers(r: u16, c: u16) -> Killers {
     killers
 }
 
+fn gen_rand_enemy_blocks(r: u16, c: u16) -> Vec<EnemyBlock> {
+    let mut e_blocks: Vec<EnemyBlock> = Vec::with_capacity(10);
+    let mut rng = rand::thread_rng();
+    for i in 0..10 {
+        let _block = EnemyBlock {
+            r: rng.gen_range(0..r),
+            c: rng.gen_range(0..c),
+        };
+        e_blocks.push(_block);
+    }
+
+    e_blocks
+}
+
+fn physics(mut scr: &Stdout, mut board: &mut Board) -> std::io::Result<()> {
+    for i in 0..board.blocks.len() {
+        scr.queue(MoveTo(board.blocks[i].c, board.blocks[i].r))?;
+        scr.queue(Print("B"))?;
+    }
+
+    scr.flush()?;
+
+    Ok(())
+}
+
 fn main() -> std::io::Result<()> {
     let mut scr = stdout();
     let (c, r) = terminal::size().unwrap();
     enable_raw_mode()?;
 
     let killers = gen_rand_killers(r, c);
+    let enemy_blocks = gen_rand_enemy_blocks(r, c);
     let mut board = Board {
         r,
         c,
         cursor_r: r / 2 - 1,
         cursor_c: c / 2,
         killers,
+        blocks: enemy_blocks,
     };
 
     draw(&scr, &mut board, false)?;
@@ -155,11 +198,12 @@ fn main() -> std::io::Result<()> {
             }
 
             if killers_speed < 1 {
-                killers_speed = 70; // increase to make them slower.
+                killers_speed = 100; // increase to make them slower.
                 draw(&scr, &mut board, true)?;
             } else {
                 draw(&scr, &mut board, false)?;
             }
+            physics(&scr, &mut board)?;
 
             killers_speed -= 1;
             last_execution_time = Instant::now();
